@@ -1,0 +1,297 @@
+---
+title: "Machine Learning Diabetes"
+author: "Lansana CISSE"
+date: "2024-03-16"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r}
+# Definir le repertoire de travail
+setwd("C:/Users/tandian/Desktop/tp")
+```
+
+```{r}
+# chargement des données
+data <- read.csv("diabetes.csv", header = TRUE)
+```
+
+```{r}
+# Afficher la structure des données
+str(data)
+```
+# 1. Pretaitement des données
+
+## 1.1 Identification des variables quantitatives et catégorielles
+
+```{r}
+# Separer les variables quantitatives et catégorielles
+var_cat <- data["Outcome"] # outcome est la seule variable catégorielle
+var_quant <- data[-c(9)] # les autres variables sont quantitatives
+```
+```{r}
+# Convertir la variable Outcome en facteur
+data$Outcome <- as.factor(data$Outcome)
+```
+
+```{r}
+# Afficher la struture des variables quantitatives
+str(var_quant)
+```
+
+```{r}
+# Afficher la struture des variables catégorielles
+str(var_cat)
+```
+
+## 1.2 Identification et traitement des valeurs manquantes
+
+A l'exception de la variable Outcome (variable cible) et de la variable pregnancies 
+Nous allons remplacer les valeurs manquantes representées par 0 par NA pour faciliter le traitement des valeurs manquantes
+
+
+```{r}
+
+# Remplacer les valeurs manquantes par NA
+colonnes <- c("Glucose", "BloodPressure", "SkinThickness", "Insulin",
+              "BMI", "DiabetesPedigreeFunction", "Age")
+data[colonnes] <- lapply(data[colonnes], function(x) ifelse(x == 0, NA, x))
+
+```
+
+```{r}
+# Afficher le nombre de valeurs manquantes par variable
+colSums(is.na(data))
+```
+
+## 1.3 Imputation des valeurs manquantes par regression lineaire
+
+```{r}
+# Imputation des valeurs manquantes par regression lineaire
+for (col in colnames(data)[2:8]) {
+  data[[col]] <- ifelse(is.na(data[[col]]), predict(lm(data[[col]] ~ 
+                                                         data$Outcome), data), data[[col]])
+}
+```
+
+
+```{r}
+# Affichons les statistiques descriptives des variables quantitatives
+summary(data[, -9]) # on exclut la variable Outcome
+
+
+```
+
+## 1.4 Separation des données en jeu d'apprentissage et jeu de test
+ 
+```{r}
+# fixer de la graine pour la reproductibilité
+set.seed(1)
+```
+
+```{r}
+# Partionner les données en jeu d'apprentissage et jeu de test
+
+# Creer l'inidice de jeu de test
+test_indices <- sample(1:nrow(data), 100)
+
+# creer le jeu de test
+test_set <- data[test_indices, ]
+
+# creer le jeu d'apprentissage
+train_set <- data[-test_indices, ]
+```
+
+```{r}
+# Separer les variables explicatives et la variable cible
+train_x <- train_set[, -5]
+train_y <- train_set$Outcome
+test_x <- test_set[, -5]
+test_y <- test_set$Outcome
+```
+
+# 2. Mise en oeuvre des algorithmes de Machine Learning
+
+## 2.1 k-Nearest Neighbors (k-NN)
+
+```{r}
+library(class)
+
+tbc=NULL
+for (k in 1:20){
+  knn_model <- knn(train = train_x, test = test_x, cl = train_y, k = k)
+  tbc[k]=mean(knn_model==test_y)
+}
+plot(tbc,type='l')
+```
+```{r}
+# Determiner la valeur optimale de k
+tcb <- which.max(tbc)
+print(paste("La valeur optimale de k est", tcb))
+```
+```{r}
+# creer le modele knn
+model_knn <- knn(train = train_x, test = test_x, cl = train_y, k = tcb)
+```
+```{r}
+# Afficher la matrice de confusion
+table(model_knn, test_y)
+```
+```{r, tidy=TRUE}
+# Afficher l'accuracy
+accurancy_knn = mean(model_knn == test_y)
+accurancy_knn
+```
+
+## 2.2 Random Forest
+
+```{r}
+library(randomForest) 
+
+# creer le modele random forest
+rf_model <- randomForest(Outcome ~ ., data = train_set, ntree = 100)
+
+# predire la variable cible de l'ensemble de test
+rf_model_pred <- predict(rf_model, test_set)
+
+```
+
+```{r}
+# Matrice de confusion
+table(rf_model_pred, test_set$Outcome)
+
+# Calcul de l'accuracy 
+accurancy_rf = mean(rf_model_pred == test_set$Outcome)
+accurancy_rf
+```
+
+```{r}
+# Visualiser l'importance des variables
+varImpPlot(rf_model)
+
+```
+
+## 2.3 Support Vector Machine (SVM)
+
+```{r}
+library(e1071)
+
+# creer le modele svm
+svm_model <- svm(Outcome ~ ., data = train_set, kernel = "linear")
+
+# predire la variable cible de l'ensemble de test
+svm_model_pred <- predict(svm_model, test_set)
+
+# afficher la matrice de confusion
+table(svm_model_pred, test_set$Outcome)
+
+# Calcul de l'accuracy
+accurancy_svm = mean(svm_model_pred == test_set$Outcome)
+accurancy_svm
+
+```
+
+## 2.4 Regression Logistique
+
+```{r}
+# creer le modele de regression logistique
+log_model <- glm(Outcome ~ ., data = train_set, family = binomial)
+
+# predire la variable cible de l'ensemble de test
+log_model_pred <- predict(log_model, test_set, type = "response")
+
+# convertir les predictions en 0 et 1
+log_model_pred <- ifelse(log_model_pred > 0.5, 1, 0)
+
+# Afficher la matrice de confusion
+table(log_model_pred, test_set$Outcome)
+
+# affichage de l'accuracy
+accurancy_log = mean(log_model_pred == test_set$Outcome)
+accurancy_log
+```
+
+## 2.5 Arbre de decision
+```{r}
+library(rpart) 
+library(rpart.plot) 
+
+# creer le dataframe pour le jeu d'apprentissage et le jeu de test
+train_set <- as.data.frame(train_set)
+test_set <- as.data.frame(test_set)
+
+# # creer le modele de l'arbre de decision
+tree_model <- rpart(Outcome ~ ., data = train_set, method = "class")
+
+# predire la variable cible de l'ensemble de test
+tree_model_pred <- predict(tree_model, test_set, type = "class")
+
+# Afficher le graphique de l'arbre de decision
+rpart.plot(tree_model)
+
+```
+
+```{r}
+# Afficher la matrice de confusion
+table(tree_model_pred, test_set$Outcome)
+
+# Calcul de l'accuracy
+accurancy_tree = mean(tree_model_pred == test_set$Outcome)
+accurancy_tree
+
+```
+
+# 3. Conclusion : Comparaison des performances des algorithmes
+
+```{r}
+# Comparer les modeles en fonction de leur accuracy
+accuracies <- c(mean(model_knn == test_y), mean(rf_model_pred == test_set$Outcome), 
+                mean(svm_model_pred == test_set$Outcome), 
+                mean(log_model_pred == test_set$Outcome), 
+                mean(tree_model_pred == test_set$Outcome))
+names(accuracies) <- c("KNN", "Random Forest", "SVM", "Logistic Regression", "Decision Tree")
+
+# Trier les accuracies par ordre décroissant
+sorted_accuracies <- accuracies[order(-accuracies)]
+
+# Afficher les accuracies triées
+sorted_accuracies
+
+```
+
+```{r}
+# Recuperer le meilleur modele
+best_model <- names(sorted_accuracies)[1]
+
+# Conclusion 
+
+cat("Le modèle", best_model, "est le meilleur modèle en terme de performance.\n")
+cat("Son accuracy est de", round(sorted_accuracies[1] * 100, 2), "%.\n")
+
+
+```
+```{r, tidy=TRUE}
+# Afficher les variables déterminantes pour le meilleur modèle
+
+if (best_model == "KNN") {
+  print("Le modèle KNN ne permet pas de déterminer les variables les plus importantes.")
+} else if (best_model == "Random Forest") {
+  rf_variable_importance <- importance(rf_model)
+  print("Variables déterminantes pour le modèle Random Forest :")
+  print(rf_variable_importance)
+} else if (best_model == "SVM") {
+  svm_coeffs <- coef(svm_model)
+  print("Variables déterminantes pour le modèle SVM :")
+  print(svm_coeffs)
+} else if (best_model == "Logistic Regression") {
+  log_coefficients <- coef(log_model)
+  print("Variables déterminantes pour le modèle de régression logistique :")
+  print(log_coefficients)
+} else if (best_model == "Decision Tree") {
+  tree_variable_importance <- importance(tree_model)
+  print("Variables déterminantes pour le modèle de l'arbre de décision :")
+  print(tree_variable_importance)
+}
+```
